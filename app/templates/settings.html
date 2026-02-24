@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Network Settings</title>
   <link rel="stylesheet" href="/static/css/kiosk.css" />
+
   <style>
     body {
       display: flex;
@@ -15,7 +16,7 @@
     }
 
     .card {
-      width: 560px;
+      width: 580px;
       background: #020617;
       border-radius: 16px;
       padding: 30px 34px;
@@ -111,31 +112,54 @@
 <div class="card">
   <h2>Network Settings</h2>
 
-  <!-- Network Mode -->
+  <!-- Network Type -->
+  <div class="field">
+    <label>Network Type</label>
+    <select id="network_type" onchange="toggleNetworkType()">
+      <option value="ethernet">Ethernet (Wired)</option>
+      <option value="wifi">Wi-Fi (Wireless)</option>
+    </select>
+  </div>
+
+  <!-- Wi-Fi Fields -->
+  <div id="wifi_fields" style="display:none">
+    <div class="field">
+      <label>Wi-Fi SSID</label>
+      <input id="wifi_ssid" placeholder="Factory_WiFi">
+    </div>
+
+    <div class="field">
+      <label>Wi-Fi Password</label>
+      <input id="wifi_password" type="password" placeholder="••••••••">
+    </div>
+  </div>
+
+  <!-- IP Mode -->
   <div class="field">
     <label>IP Assignment</label>
-    <select id="mode">
+    <select id="ip_mode" onchange="toggleStatic()">
       <option value="dhcp">Automatic (DHCP)</option>
       <option value="static">Manual (Static)</option>
     </select>
   </div>
 
-  <!-- IP + Gateway -->
-  <div class="row">
-    <div class="field">
-      <label>Pi IP Address</label>
-      <input id="pi_ip" placeholder="192.168.1.50/24">
+  <!-- Static IP Fields -->
+  <div id="static_fields">
+    <div class="row">
+      <div class="field">
+        <label>Pi IP Address</label>
+        <input id="pi_ip" placeholder="192.168.1.50/24">
+      </div>
+      <div class="field">
+        <label>Gateway</label>
+        <input id="gateway" placeholder="192.168.1.1">
+      </div>
     </div>
-    <div class="field">
-      <label>Gateway</label>
-      <input id="gateway" placeholder="192.168.1.1">
-    </div>
-  </div>
 
-  <!-- DNS -->
-  <div class="field">
-    <label>DNS Server</label>
-    <input id="dns" placeholder="8.8.8.8">
+    <div class="field">
+      <label>DNS Server</label>
+      <input id="dns" placeholder="8.8.8.8">
+    </div>
   </div>
 
   <div class="divider"></div>
@@ -143,13 +167,13 @@
   <!-- Target URL -->
   <div class="field">
     <label>Target URL (Camera / Device)</label>
-    <input id="target" placeholder="http://192.168.1.10">
+    <input id="target_url" placeholder="http://192.168.1.10">
   </div>
 
   <!-- Actions -->
   <div class="actions">
-    <button class="btn-primary" onclick="apply()">Apply</button>
-    <button class="btn-secondary" onclick="cancel()">Cancel</button>
+    <button class="btn-primary" onclick="applySettings()">Apply</button>
+    <button class="btn-secondary" onclick="goBack()">Cancel</button>
   </div>
 
   <div class="hint">
@@ -160,40 +184,68 @@
 <script src="/static/js/shortcuts.js"></script>
 
 <script>
-async function load() {
+function toggleNetworkType() {
+  wifi_fields.style.display =
+    network_type.value === "wifi" ? "block" : "none";
+}
+
+function toggleStatic() {
+  static_fields.style.display =
+    ip_mode.value === "static" ? "block" : "none";
+}
+
+async function loadSettings() {
   const res = await fetch("/api/config");
   const cfg = await res.json();
 
-  mode.value = cfg.network_mode || "dhcp";
+  network_type.value = cfg.network_type || "ethernet";
+  ip_mode.value = cfg.ip_mode || "dhcp";
+
   pi_ip.value = cfg.pi_ip || "";
   gateway.value = cfg.gateway || "";
   dns.value = cfg.dns || "";
-  target.value = cfg.target_url || "";
+
+  wifi_ssid.value = cfg.wifi_ssid || "";
+  wifi_password.value = cfg.wifi_password || "";
+
+  target_url.value = cfg.target_url || "";
+
+  toggleNetworkType();
+  toggleStatic();
 }
 
-async function apply() {
+async function applySettings() {
   const cfg = {
-    network_mode: mode.value,
+    network_type: network_type.value,
+    ip_mode: ip_mode.value,
     pi_ip: pi_ip.value,
     gateway: gateway.value,
     dns: dns.value,
-    target_url: target.value
+    wifi_ssid: wifi_ssid.value,
+    wifi_password: wifi_password.value,
+    target_url: target_url.value
   };
 
   await fetch("/api/config", {
     method: "POST",
-    headers: {"Content-Type":"application/json"},
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cfg)
+  });
+
+  await fetch("/api/network/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(cfg)
   });
 
   window.location.assign("/");
 }
 
-function cancel() {
+function goBack() {
   window.location.assign("/");
 }
 
-load();
+loadSettings();
 </script>
 
 </body>

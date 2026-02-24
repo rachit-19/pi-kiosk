@@ -1,7 +1,13 @@
 {
-  "network_mode": "static",
-  "pi_ip": "192.168.4.55",
-  "gateway": "192.168.4.1",
-  "dns": "8.8.8.8",
+  "network_type": "ethernet",
+  "ip_mode": "dhcp",
+
+  "static_ip": "",
+  "gateway": "",
+  "dns": "",
+
+  "wifi_ssid": "",
+  "wifi_password": "",
+
   "target_url": "http://192.168.1.10"
 }
