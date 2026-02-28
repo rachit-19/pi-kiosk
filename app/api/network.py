@@ -1,152 +1,104 @@
-import subprocess
+from fastapi import APIRouter, HTTPException
+from app.services.network_linux import (
+    ethernet_dhcp,
+    ethernet_static,
+    wifi_connect,
+    wifi_dhcp,
+    wifi_static,
+    get_status,
+    scan_wifi
+)
 
-from pydantic import BaseModel, Field
-from typing import Optional
-
-
-class NetworkConfig(BaseModel):
-    network_type: str = Field(..., pattern="^(ethernet|wifi)$")
-    ip_mode: str = Field(..., pattern="^(dhcp|static)$")
-
-    pi_ip: Optional[str] = None
-    gateway: Optional[str] = None
-    dns: Optional[str] = None
-
-    wifi_ssid: Optional[str] = None
-    wifi_password: Optional[str] = None
-
-def run(cmd: list):
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True
-    )
-
-    if result.returncode != 0:
-        raise Exception(result.stderr.strip())
-
-    return result.stdout.strip()
+router = APIRouter(prefix="/api/network", tags=["network"])
 
 
-# ===============================
-# Ethernet
-# ===============================
+# ============================================================
+# APPLY NETWORK
+# ============================================================
 
-def ethernet_dhcp():
-    run(["nmcli", "con", "mod", "Wired connection 1",
-         "ipv4.method", "auto"])
-    run(["nmcli", "con", "up", "Wired connection 1"])
+@router.post("/apply")
+def apply_network(cfg: dict):
+    try:
+        network_type = cfg.get("network_type")
+        ip_mode = cfg.get("ip_mode")
 
+        if network_type == "ethernet":
 
-def ethernet_static(ip, gateway, dns=None):
-    run(["nmcli", "con", "mod", "Wired connection 1",
-         "ipv4.method", "manual",
-         "ipv4.addresses", ip,
-         "ipv4.gateway", gateway])
+            if ip_mode == "dhcp":
+                ethernet_dhcp()
 
-    if dns:
-        run(["nmcli", "con", "mod", "Wired connection 1",
-             "ipv4.dns", dns])
+            elif ip_mode == "static":
+                ethernet_static(
+                    cfg.get("pi_ip"),
+                    cfg.get("gateway"),
+                    cfg.get("dns")
+                )
 
-    run(["nmcli", "con", "up", "Wired connection 1"])
+            else:
+                raise ValueError("Invalid ip_mode")
 
+        elif network_type == "wifi":
 
-# ===============================
-# WiFi
-# ===============================
+            # Connect first (creates/activates connection)
+            wifi_connect(
+                cfg.get("wifi_ssid"),
+                cfg.get("wifi_password")
+            )
 
-def wifi_connect(ssid, password):
-    # Try connect (will auto create connection)
-    run([
-        "nmcli", "dev", "wifi", "connect",
-        ssid,
-        "password", password
-    ])
+            if ip_mode == "dhcp":
+                wifi_dhcp()
 
+            elif ip_mode == "static":
+                wifi_static(
+                    cfg.get("pi_ip"),
+                    cfg.get("gateway"),
+                    cfg.get("dns")
+                )
 
-def wifi_dhcp():
-    run(["nmcli", "con", "mod",
-         get_active_wifi_connection(),
-         "ipv4.method", "auto"])
-    run(["nmcli", "con", "up",
-         get_active_wifi_connection()])
+            else:
+                raise ValueError("Invalid ip_mode")
 
+        else:
+            raise ValueError("Invalid network_type")
 
-def wifi_static(ip, gateway, dns=None):
-    con = get_active_wifi_connection()
+        return {"status": "ok"}
 
-    run(["nmcli", "con", "mod", con,
-         "ipv4.method", "manual",
-         "ipv4.addresses", ip,
-         "ipv4.gateway", gateway])
-
-    if dns:
-        run(["nmcli", "con", "mod", con,
-             "ipv4.dns", dns])
-
-    run(["nmcli", "con", "up", con])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-def get_active_wifi_connection():
-    output = run(["nmcli", "-t", "-f", "NAME,DEVICE",
-                  "con", "show", "--active"])
+# ============================================================
+# GET CURRENT NETWORK STATUS
+# ============================================================
 
-    for line in output.splitlines():
-        name, device = line.split(":")
-        if device == "wlan0":
-            return name
-
-    raise Exception("No active WiFi connection found")
-
-
-# ===============================
-# Status
-# ===============================
-
-def get_status():
-    wifi = run(["nmcli", "-t", "-f",
-                "ACTIVE,SSID,DEVICE",
-                "dev", "wifi"])
-
-    for line in wifi.splitlines():
-        parts = line.split(":")
-        if parts[0] == "yes":
-            return {
-                "connected": True,
-                "interface": "wifi",
-                "ssid": parts[1]
-            }
-
-    eth = run(["nmcli", "-t", "-f",
-               "DEVICE,STATE", "device"])
-
-    if "eth0:connected" in eth:
-        return {
-            "connected": True,
-            "interface": "ethernet"
-        }
-
-    return {"connected": False}
+@router.get("/status")
+def network_status():
+    try:
+        return get_status()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-# ===============================
-# Scan WiFi
-# ===============================
+# ============================================================
+# SCAN WIFI NETWORKS
+# ============================================================
 
-def scan_wifi():
-    output = run(["nmcli", "-t", "-f",
-                  "SSID,SIGNAL,SECURITY",
-                  "dev", "wifi", "list"])
+@router.get("/wifi/scan")
+def wifi_scan():
+    try:
+        return scan_wifi()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    networks = []
 
-    for line in output.splitlines():
-        parts = line.split(":")
-        if parts[0]:
-            networks.append({
-                "ssid": parts[0],
-                "signal": parts[1],
-                "security": parts[2]
-            })
+# ============================================================
+# GET CURRENT IP ONLY (lightweight endpoint)
+# ============================================================
 
-    return networks
+@router.get("/ip")
+def current_ip():
+    try:
+        status = get_status()
+        return {"ip": status.get("ip")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
