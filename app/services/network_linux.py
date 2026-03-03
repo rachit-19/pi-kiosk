@@ -24,9 +24,20 @@ def _run(cmd: list) -> str:
 
 
 def _get_ethernet_connection() -> str:
-    """
-    Auto-detect active ethernet connection name.
-    """
+    output = _run([
+        "nmcli", "-t",
+        "-f", "NAME,TYPE,DEVICE",
+        "con", "show", "--active"
+    ])
+
+    for line in output.splitlines():
+        parts = line.split(":")
+        if len(parts) >= 2:
+            name, typ = parts[0], parts[1]
+            if typ.startswith("802-3"):
+                return name
+
+    # fallback: any ethernet connection
     output = _run([
         "nmcli", "-t",
         "-f", "NAME,TYPE",
@@ -35,7 +46,7 @@ def _get_ethernet_connection() -> str:
 
     for line in output.splitlines():
         name, typ = line.split(":")
-        if typ == "ethernet":
+        if typ.startswith("802-3"):
             return name
 
     raise Exception("No ethernet connection found")
