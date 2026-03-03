@@ -2,6 +2,9 @@ import subprocess
 from typing import Optional
 
 
+CONNECTION_NAME = "kiosk-eth"  # Change if needed
+
+
 # ============================================================
 # Utility
 # ============================================================
@@ -15,105 +18,42 @@ def run(cmd: list) -> str:
     return result.stdout.strip()
 
 
-def get_active_connection_by_type(conn_type: str) -> str:
-    """
-    Returns active connection name for ethernet or wifi
-    """
-    output = run([
-        "nmcli", "-t",
-        "-f", "NAME,TYPE,STATE",
-        "con", "show", "--active"
-    ])
-
-    for line in output.splitlines():
-        name, typ, state = line.split(":")
-        if typ == conn_type and state == "activated":
-            return name
-
-    raise Exception(f"No active {conn_type} connection found")
-
-
-def get_active_device_by_type(conn_type: str) -> Optional[str]:
-    output = run([
-        "nmcli", "-t",
-        "-f", "DEVICE,TYPE,STATE",
-        "dev"
-    ])
-
-    for line in output.splitlines():
-        device, typ, state = line.split(":")
-        if typ == conn_type and state == "connected":
-            return device
-
-    return None
-
-
 # ============================================================
-# Ethernet
+# Ethernet DHCP
 # ============================================================
 
 def ethernet_dhcp():
-    conn = get_active_connection_by_type("ethernet")
+    run([
+        "nmcli", "con", "mod", CONNECTION_NAME,
+        "ipv4.method", "auto"
+    ])
 
-    run(["nmcli", "con", "mod", conn,
-         "ipv4.method", "auto"])
+    run(["nmcli", "con", "up", CONNECTION_NAME])
 
-    run(["nmcli", "con", "up", conn])
 
+# ============================================================
+# Ethernet Static
+# ============================================================
 
 def ethernet_static(ip: str, gateway: str, dns: Optional[str] = None):
-    conn = get_active_connection_by_type("ethernet")
+
+    if not ip or not gateway:
+        raise Exception("IP and Gateway required for static mode")
 
     run([
-        "nmcli", "con", "mod", conn,
+        "nmcli", "con", "mod", CONNECTION_NAME,
         "ipv4.method", "manual",
         "ipv4.addresses", ip,
         "ipv4.gateway", gateway
     ])
 
     if dns:
-        run(["nmcli", "con", "mod", conn,
-             "ipv4.dns", dns])
+        run([
+            "nmcli", "con", "mod", CONNECTION_NAME,
+            "ipv4.dns", dns
+        ])
 
-    run(["nmcli", "con", "up", conn])
-
-
-# ============================================================
-# WiFi
-# ============================================================
-
-def wifi_connect(ssid: str, password: str):
-    run([
-        "nmcli", "dev", "wifi", "connect",
-        ssid,
-        "password", password
-    ])
-
-
-def wifi_dhcp():
-    conn = get_active_connection_by_type("wifi")
-
-    run(["nmcli", "con", "mod", conn,
-         "ipv4.method", "auto"])
-
-    run(["nmcli", "con", "up", conn])
-
-
-def wifi_static(ip: str, gateway: str, dns: Optional[str] = None):
-    conn = get_active_connection_by_type("wifi")
-
-    run([
-        "nmcli", "con", "mod", conn,
-        "ipv4.method", "manual",
-        "ipv4.addresses", ip,
-        "ipv4.gateway", gateway
-    ])
-
-    if dns:
-        run(["nmcli", "con", "mod", conn,
-             "ipv4.dns", dns])
-
-    run(["nmcli", "con", "up", conn])
+    run(["nmcli", "con", "up", CONNECTION_NAME])
 
 
 # ============================================================
@@ -121,16 +61,18 @@ def wifi_static(ip: str, gateway: str, dns: Optional[str] = None):
 # ============================================================
 
 def get_status():
+
     output = run([
         "nmcli", "-t",
-        "-f", "DEVICE,TYPE,STATE,CONNECTION",
+        "-f", "DEVICE,STATE,CONNECTION",
         "dev"
     ])
 
     for line in output.splitlines():
-        device, typ, state, conn = line.split(":")
+        device, state, connection = line.split(":")
 
-        if state == "connected":
+        if state == "connected" and connection == CONNECTION_NAME:
+
             ip = run([
                 "nmcli", "-g", "IP4.ADDRESS",
                 "dev", "show", device
@@ -138,35 +80,8 @@ def get_status():
 
             return {
                 "connected": True,
-                "type": typ,
                 "device": device,
-                "connection": conn,
                 "ip": ip
             }
 
     return {"connected": False}
-
-
-# ============================================================
-# WiFi Scan
-# ============================================================
-
-def scan_wifi():
-    output = run([
-        "nmcli", "-t",
-        "-f", "SSID,SIGNAL,SECURITY",
-        "dev", "wifi", "list"
-    ])
-
-    networks = []
-
-    for line in output.splitlines():
-        parts = line.split(":")
-        if parts[0]:
-            networks.append({
-                "ssid": parts[0],
-                "signal": parts[1],
-                "security": parts[2]
-            })
-
-    return networks

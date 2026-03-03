@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Network Settings</title>
+<title>Ethernet Network Settings</title>
 
 <style>
 body {
@@ -18,7 +18,7 @@ body {
 }
 
 .card {
-  width: 640px;
+  width: 520px;
   background: #020617;
   border-radius: 18px;
   padding: 32px;
@@ -32,7 +32,7 @@ h2 {
 }
 
 .section {
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .section-title {
@@ -138,37 +138,17 @@ button {
 <body>
 
 <div class="card">
-  <h2>Network Settings</h2>
+  <h2>Ethernet Network Settings</h2>
 
-  <!-- Network Section -->
+  <!-- STATUS -->
   <div class="section">
-    <div class="section-title">Connection Type</div>
-
-    <div class="field">
-      <label>Network Type</label>
-      <select id="networkType">
-        <option value="ethernet">Ethernet (Wired)</option>
-        <option value="wifi">Wi-Fi (Wireless)</option>
-      </select>
-      <div id="connectionStatus" class="status disconnected">
-        Checking...
-      </div>
-    </div>
-
-    <div id="wifiFields">
-      <div class="field">
-        <label>Wi-Fi SSID</label>
-        <input id="wifiSsid" placeholder="Factory_WiFi">
-      </div>
-
-      <div class="field">
-        <label>Wi-Fi Password</label>
-        <input id="wifiPassword" type="password" placeholder="••••••••">
-      </div>
+    <div class="section-title">Connection Status</div>
+    <div id="connectionStatus" class="status disconnected">
+      Checking...
     </div>
   </div>
 
-  <!-- IP Section -->
+  <!-- IP MODE -->
   <div class="section">
     <div class="section-title">IP Configuration</div>
 
@@ -199,65 +179,44 @@ button {
     </div>
   </div>
 
-  <!-- Target Section -->
+  <!-- DISPLAY URL -->
   <div class="section">
-    <div class="section-title">Target Device</div>
+    <div class="section-title">Device URL</div>
     <div class="field">
-      <label>Target URL</label>
-      <input id="targetUrl" placeholder="http://192.168.1.10">
+      <label>Access URL</label>
+      <input id="displayUrl" readonly>
     </div>
   </div>
 
-  <!-- Actions -->
+  <!-- ACTIONS -->
   <div class="actions">
     <button class="btn-primary" id="applyBtn">Apply Settings</button>
-    <button class="btn-secondary" id="cancelBtn">Cancel</button>
+    <button class="btn-secondary" onclick="window.location.href='/'">Cancel</button>
   </div>
 
   <div id="loadingText" class="loading" style="display:none">
-    Applying settings...
+    Applying settings... Device may reconnect.
   </div>
 </div>
 
 <script>
-const networkType = document.getElementById("networkType");
+
 const ipMode = document.getElementById("ipMode");
-const wifiFields = document.getElementById("wifiFields");
 const staticFields = document.getElementById("staticFields");
 const applyBtn = document.getElementById("applyBtn");
-const cancelBtn = document.getElementById("cancelBtn");
 const loadingText = document.getElementById("loadingText");
 const connectionStatus = document.getElementById("connectionStatus");
 
-function updateVisibility() {
-  wifiFields.style.display =
-    networkType.value === "wifi" ? "block" : "none";
 
+function updateVisibility() {
   staticFields.style.display =
     ipMode.value === "static" ? "block" : "none";
 }
 
-async function loadSettings() {
-  try {
-    const res = await fetch("/api/config");
-    const cfg = await res.json();
 
-    networkType.value = cfg.network_type || "ethernet";
-    ipMode.value = cfg.ip_mode || "dhcp";
-
-    document.getElementById("piIp").value = cfg.pi_ip || "";
-    document.getElementById("gateway").value = cfg.gateway || "";
-    document.getElementById("dns").value = cfg.dns || "";
-    document.getElementById("wifiSsid").value = cfg.wifi_ssid || "";
-    document.getElementById("wifiPassword").value = cfg.wifi_password || "";
-    document.getElementById("targetUrl").value = cfg.target_url || "";
-
-    updateVisibility();
-  } catch (err) {
-    alert("Failed to load settings.");
-  }
-}
-
+// ===============================
+// LOAD STATUS
+// ===============================
 async function loadStatus() {
   try {
     const res = await fetch("/api/network/status");
@@ -265,38 +224,52 @@ async function loadStatus() {
 
     if (data.connected) {
       connectionStatus.textContent =
-        "Connected (" + (data.interface || "") + ")";
+        "Connected (" + data.device + ")";
       connectionStatus.className = "status connected";
     } else {
       connectionStatus.textContent = "Disconnected";
       connectionStatus.className = "status disconnected";
     }
+
   } catch {
     connectionStatus.textContent = "Unknown";
   }
 }
 
+
+// ===============================
+// LOAD DISPLAY URL
+// ===============================
+async function loadDisplayUrl() {
+  try {
+    const res = await fetch("/api/network/ip");
+    const data = await res.json();
+
+    if (data.ip) {
+      const ip = data.ip.split("/")[0];
+      document.getElementById("displayUrl").value =
+        "http://" + ip + ":8000";
+    }
+
+  } catch {}
+}
+
+
+// ===============================
+// APPLY SETTINGS
+// ===============================
 async function applySettings() {
+
   const cfg = {
-    network_type: networkType.value,
     ip_mode: ipMode.value,
     pi_ip: document.getElementById("piIp").value,
     gateway: document.getElementById("gateway").value,
-    dns: document.getElementById("dns").value,
-    wifi_ssid: document.getElementById("wifiSsid").value,
-    wifi_password: document.getElementById("wifiPassword").value,
-    target_url: document.getElementById("targetUrl").value
+    dns: document.getElementById("dns").value
   };
 
   try {
     applyBtn.disabled = true;
     loadingText.style.display = "block";
-
-    await fetch("/api/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cfg)
-    });
 
     await fetch("/api/network/apply", {
       method: "POST",
@@ -304,8 +277,8 @@ async function applySettings() {
       body: JSON.stringify(cfg)
     });
 
-    alert("Network settings applied.");
-    window.location.href = "/";
+    alert("Settings applied. If IP changed, reconnect using new URL.");
+
   } catch (err) {
     alert("Failed to apply settings.");
   } finally {
@@ -314,17 +287,14 @@ async function applySettings() {
   }
 }
 
-cancelBtn.addEventListener("click", () => {
-  window.location.href = "/";
-});
 
-networkType.addEventListener("change", updateVisibility);
 ipMode.addEventListener("change", updateVisibility);
 applyBtn.addEventListener("click", applySettings);
 
 updateVisibility();
-loadSettings();
 loadStatus();
+loadDisplayUrl();
+
 </script>
 
 </body>
