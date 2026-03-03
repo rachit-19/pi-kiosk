@@ -1,18 +1,12 @@
 import subprocess
-import threading
-import time
 from typing import Optional
 
+CONNECTION_NAME = "kiosk-eth"
 
-# ============================================================
-# Internal Helpers
-# ============================================================
 
-def _run(cmd: list) -> str:
+def run(cmd: list) -> str:
     print("RUNNING:", " ".join(cmd))
-
     result = subprocess.run(cmd, capture_output=True, text=True)
-
     print("RETURN CODE:", result.returncode)
     print("STDOUT:", result.stdout)
     print("STDERR:", result.stderr)
@@ -23,128 +17,80 @@ def _run(cmd: list) -> str:
     return result.stdout.strip()
 
 
-def _get_ethernet_connection() -> str:
-    output = _run([
-        "nmcli", "-t",
-        "-f", "NAME,TYPE,DEVICE",
-        "con", "show", "--active"
-    ])
-
-    for line in output.splitlines():
-        parts = line.split(":")
-        if len(parts) >= 2:
-            name, typ = parts[0], parts[1]
-            if typ.startswith("802-3"):
-                return name
-
-    # fallback: any ethernet connection
-    output = _run([
-        "nmcli", "-t",
-        "-f", "NAME,TYPE",
-        "con", "show"
-    ])
-
-    for line in output.splitlines():
-        name, typ = line.split(":")
-        if typ.startswith("802-3"):
-            return name
-
-    raise Exception("No ethernet connection found")
-
-
-def _apply_connection_async(connection: str):
-    """
-    Bring connection up asynchronously to avoid HTTP drop issues.
-    """
-    def worker():
-        time.sleep(1)
-        subprocess.Popen(["nmcli", "con", "up", connection])
-
-    threading.Thread(target=worker, daemon=True).start()
-
-
-# ============================================================
-# Public API
-# ============================================================
+# ==========================
+# DHCP
+# ==========================
 
 def ethernet_dhcp():
-    """
-    Switch ethernet to DHCP.
-    """
-    connection = _get_ethernet_connection()
-
-    _run([
-        "nmcli", "con", "mod", connection,
+    run([
+        "nmcli", "con", "mod", CONNECTION_NAME,
         "ipv4.method", "auto"
     ])
 
-    _run([
-        "nmcli", "con", "mod", connection,
-        "ipv4.addresses", "",
-        "ipv4.gateway", "",
-        "ipv4.dns", ""
+    run([
+        "nmcli", "con", "up", CONNECTION_NAME
     ])
 
-    _apply_connection_async(connection)
 
+# ==========================
+# STATIC
+# ==========================
 
 def ethernet_static(ip: str, gateway: str, dns: Optional[str] = None):
-    """
-    Configure ethernet with static IP.
-    IP must include CIDR (example: 192.168.1.50/24)
-    """
 
-    if not ip or "/" not in ip:
-        raise Exception("Invalid IP format. Use CIDR (example: 192.168.1.50/24)")
+    if not ip:
+        raise Exception("IP required")
+
+    if "/" not in ip:
+        ip = ip + "/24"
 
     if not gateway:
-        raise Exception("Gateway required for static configuration")
+        raise Exception("Gateway required")
 
-    connection = _get_ethernet_connection()
-
-    _run([
-        "nmcli", "con", "mod", connection,
+    run([
+        "nmcli", "con", "mod", CONNECTION_NAME,
         "ipv4.method", "manual",
         "ipv4.addresses", ip,
         "ipv4.gateway", gateway
     ])
 
     if dns:
-        _run([
-            "nmcli", "con", "mod", connection,
+        run([
+            "nmcli", "con", "mod", CONNECTION_NAME,
             "ipv4.dns", dns
         ])
 
-    _apply_connection_async(connection)
+    run([
+        "nmcli", "con", "up", CONNECTION_NAME
+    ])
 
+
+# ==========================
+# STATUS
+# ==========================
 
 def get_status():
-    """
-    Return current ethernet status and IP.
-    """
-    output = _run([
+    output = run([
         "nmcli", "-t",
-        "-f", "DEVICE,TYPE,STATE,CONNECTION",
-        "dev"
+        "-f", "DEVICE,STATE,CONNECTION",
+        "dev", "status"
     ])
 
     for line in output.splitlines():
-        device, typ, state, connection = line.split(":")
+        device, state, connection = line.split(":")
 
-        if typ == "ethernet" and state == "connected":
+        if device == "eth0" and state == "connected":
 
-            ip = _run([
+            ip = run([
                 "nmcli", "-g", "IP4.ADDRESS",
-                "dev", "show", device
+                "dev", "show", "eth0"
             ])
-
-            ip_clean = ip.split("\n")[0] if ip else None
 
             return {
                 "connected": True,
                 "device": device,
                 "connection": connection,
-                "ip": ip_clean
+                "ip": ip
             }
 
     return {"connected": False}
