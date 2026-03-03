@@ -195,6 +195,7 @@ const ipMode = document.getElementById("ipMode");
 const staticFields = document.getElementById("staticFields");
 const applyBtn = document.getElementById("applyBtn");
 const loadingText = document.getElementById("loadingText");
+const connectionStatus = document.getElementById("connectionStatus");
 
 const staticIp = document.getElementById("staticIp");
 const gateway = document.getElementById("gateway");
@@ -204,19 +205,21 @@ const targetUrl = document.getElementById("targetUrl");
 const ipError = document.getElementById("ipError");
 const gwError = document.getElementById("gwError");
 
-// ======================
-// Toggle Visibility
-// ======================
+// Toggle visibility
 function updateVisibility() {
   staticFields.style.display =
     ipMode.value === "static" ? "block" : "none";
 }
 
-// ======================
-// Validation
-// ======================
+// Validate IPv4 (accepts with or without CIDR)
 function isValidIp(ip) {
-  return /^(25[0-5]|2[0-4]\d|1\d\d|\d\d|\d)\.(25[0-5]|2[0-4]\d|1\d\d|\d\d|\d)\.(25[0-5]|2[0-4]\d|1\d\d|\d\d|\d)\.(25[0-5]|2[0-4]\d|1\d\d|\d\d|\d)$/.test(ip);
+  if (!ip) return false;
+  const cleanIp = ip.includes("/") ? ip.split("/")[0] : ip;
+
+  const regex =
+    /^(25[0-5]|2[0-4]\d|1\d\d|\d\d|\d)\.(25[0-5]|2[0-4]\d|1\d\d|\d\d|\d)\.(25[0-5]|2[0-4]\d|1\d\d|\d\d|\d)\.(25[0-5]|2[0-4]\d|1\d\d|\d\d|\d)$/;
+
+  return regex.test(cleanIp);
 }
 
 function validate() {
@@ -246,15 +249,13 @@ function validate() {
   return valid;
 }
 
-// ======================
-// Load Existing Config
-// ======================
+// Load config
 async function loadConfig() {
   const res = await fetch("/api/config");
   const cfg = await res.json();
 
   ipMode.value = cfg.ip_mode || "dhcp";
-  staticIp.value = cfg.static_ip || "";
+  staticIp.value = (cfg.static_ip || "").split("/")[0];
   gateway.value = cfg.gateway || "";
   dns.value = cfg.dns || "";
   targetUrl.value = cfg.target_url || "";
@@ -262,9 +263,26 @@ async function loadConfig() {
   updateVisibility();
 }
 
-// ======================
-// Apply
-// ======================
+// Load status (polling)
+async function loadStatus() {
+  try {
+    const res = await fetch("/api/network/status");
+    const data = await res.json();
+
+    if (data.connected) {
+      connectionStatus.textContent =
+        "Connected (" + data.device + ")";
+      connectionStatus.className = "status connected";
+    } else {
+      connectionStatus.textContent = "Disconnected";
+      connectionStatus.className = "status disconnected";
+    }
+  } catch {
+    connectionStatus.textContent = "Unknown";
+  }
+}
+
+// Apply settings
 async function applySettings() {
 
   if (!validate()) return;
@@ -314,7 +332,8 @@ ipMode.addEventListener("change", updateVisibility);
 applyBtn.addEventListener("click", applySettings);
 
 loadConfig();
-updateVisibility();
+loadStatus();
+setInterval(loadStatus, 3000);  // live status refresh
 
 </script>
 
