@@ -9,10 +9,13 @@ from typing import Optional
 # ============================================================
 
 def _run(cmd: list) -> str:
-    """
-    Execute command and raise proper exception if it fails.
-    """
+    print("RUNNING:", " ".join(cmd))
+
     result = subprocess.run(cmd, capture_output=True, text=True)
+
+    print("RETURN CODE:", result.returncode)
+    print("STDOUT:", result.stdout)
+    print("STDERR:", result.stderr)
 
     if result.returncode != 0:
         raise Exception(result.stderr.strip() or "Command failed")
