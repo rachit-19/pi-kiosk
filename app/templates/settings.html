@@ -25,42 +25,30 @@ body {
   box-shadow: 0 30px 60px rgba(0,0,0,.6);
 }
 
-h2 {
-  margin: 0 0 24px 0;
-  text-align: center;
-  font-weight: 600;
-}
+h2 { text-align: center; margin-bottom: 24px; }
 
-.section {
-  margin-bottom: 24px;
-}
+.section { margin-bottom: 24px; }
 
 .section-title {
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 1px;
   color: #38bdf8;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
-.field {
-  margin-bottom: 16px;
-}
+.field { margin-bottom: 16px; }
 
-.row {
-  display: flex;
-  gap: 12px;
-}
+.row { display: flex; gap: 12px; }
 
-.field label {
-  display: block;
+label {
   font-size: 13px;
   color: #94a3b8;
+  display: block;
   margin-bottom: 6px;
 }
 
-.field input,
-.field select {
+input, select {
   width: 100%;
   padding: 12px;
   border-radius: 10px;
@@ -70,26 +58,27 @@ h2 {
   font-size: 14px;
 }
 
-.field input:focus,
-.field select:focus {
-  outline: none;
-  border-color: #38bdf8;
+input.error { border-color: #ef4444; }
+
+.error-text {
+  font-size: 12px;
+  color: #ef4444;
+  margin-top: 4px;
 }
 
 .status {
-  display: inline-block;
   padding: 6px 12px;
   border-radius: 8px;
   font-size: 12px;
-  margin-top: 8px;
+  display: inline-block;
 }
 
-.status.connected {
+.connected {
   background: #052e16;
   color: #22c55e;
 }
 
-.status.disconnected {
+.disconnected {
   background: #450a0a;
   color: #ef4444;
 }
@@ -160,35 +149,36 @@ button {
       </select>
     </div>
 
-    <div id="staticFields">
+    <div id="staticFields" style="display:none;">
       <div class="row">
         <div class="field">
-          <label>IP Address (CIDR)</label>
-          <input id="piIp" placeholder="192.168.1.50/24">
+          <label>Static IP</label>
+          <input id="staticIp" placeholder="192.168.1.50">
+          <div id="ipError" class="error-text"></div>
         </div>
         <div class="field">
           <label>Gateway</label>
           <input id="gateway" placeholder="192.168.1.1">
+          <div id="gwError" class="error-text"></div>
         </div>
       </div>
 
       <div class="field">
-        <label>DNS Server</label>
+        <label>DNS (optional)</label>
         <input id="dns" placeholder="8.8.8.8">
       </div>
     </div>
   </div>
 
-  <!-- DISPLAY URL -->
+  <!-- TARGET URL -->
   <div class="section">
-    <div class="section-title">Device URL</div>
+    <div class="section-title">Site Load URL</div>
     <div class="field">
-      <label>Access URL</label>
-      <input id="displayUrl" readonly>
+      <label>Target URL</label>
+      <input id="targetUrl" placeholder="http://192.168.1.10">
     </div>
   </div>
 
-  <!-- ACTIONS -->
   <div class="actions">
     <button class="btn-primary" id="applyBtn">Apply Settings</button>
     <button class="btn-secondary" onclick="window.location.href='/'">Cancel</button>
@@ -205,71 +195,104 @@ const ipMode = document.getElementById("ipMode");
 const staticFields = document.getElementById("staticFields");
 const applyBtn = document.getElementById("applyBtn");
 const loadingText = document.getElementById("loadingText");
-const connectionStatus = document.getElementById("connectionStatus");
 
+const staticIp = document.getElementById("staticIp");
+const gateway = document.getElementById("gateway");
+const dns = document.getElementById("dns");
+const targetUrl = document.getElementById("targetUrl");
 
+const ipError = document.getElementById("ipError");
+const gwError = document.getElementById("gwError");
+
+// ======================
+// Toggle Visibility
+// ======================
 function updateVisibility() {
   staticFields.style.display =
     ipMode.value === "static" ? "block" : "none";
 }
 
+// ======================
+// Validation
+// ======================
+function isValidIp(ip) {
+  return /^(25[0-5]|2[0-4]\d|1\d\d|\d\d|\d)\.(25[0-5]|2[0-4]\d|1\d\d|\d\d|\d)\.(25[0-5]|2[0-4]\d|1\d\d|\d\d|\d)\.(25[0-5]|2[0-4]\d|1\d\d|\d\d|\d)$/.test(ip);
+}
 
-// ===============================
-// LOAD STATUS
-// ===============================
-async function loadStatus() {
-  try {
-    const res = await fetch("/api/network/status");
-    const data = await res.json();
+function validate() {
+  let valid = true;
 
-    if (data.connected) {
-      connectionStatus.textContent =
-        "Connected (" + data.device + ")";
-      connectionStatus.className = "status connected";
-    } else {
-      connectionStatus.textContent = "Disconnected";
-      connectionStatus.className = "status disconnected";
+  ipError.textContent = "";
+  gwError.textContent = "";
+
+  staticIp.classList.remove("error");
+  gateway.classList.remove("error");
+
+  if (ipMode.value === "static") {
+
+    if (!isValidIp(staticIp.value)) {
+      ipError.textContent = "Invalid IP address";
+      staticIp.classList.add("error");
+      valid = false;
     }
 
-  } catch {
-    connectionStatus.textContent = "Unknown";
+    if (!isValidIp(gateway.value)) {
+      gwError.textContent = "Invalid gateway";
+      gateway.classList.add("error");
+      valid = false;
+    }
   }
+
+  return valid;
 }
 
+// ======================
+// Load Existing Config
+// ======================
+async function loadConfig() {
+  const res = await fetch("/api/config");
+  const cfg = await res.json();
 
-// ===============================
-// LOAD DISPLAY URL
-// ===============================
-async function loadDisplayUrl() {
-  try {
-    const res = await fetch("/api/network/ip");
-    const data = await res.json();
+  ipMode.value = cfg.ip_mode || "dhcp";
+  staticIp.value = cfg.static_ip || "";
+  gateway.value = cfg.gateway || "";
+  dns.value = cfg.dns || "";
+  targetUrl.value = cfg.target_url || "";
 
-    if (data.ip) {
-      const ip = data.ip.split("/")[0];
-      document.getElementById("displayUrl").value =
-        "http://" + ip + ":8000";
-    }
-
-  } catch {}
+  updateVisibility();
 }
 
-
-// ===============================
-// APPLY SETTINGS
-// ===============================
+// ======================
+// Apply
+// ======================
 async function applySettings() {
 
+  if (!validate()) return;
+
+  let ipValue = staticIp.value;
+
+  if (ipMode.value === "static" && ipValue && !ipValue.includes("/")) {
+    ipValue = ipValue + "/24";
+  }
+
   const cfg = {
+    network_type: "ethernet",
     ip_mode: ipMode.value,
-    pi_ip: document.getElementById("piIp").value,
-    gateway: document.getElementById("gateway").value,
-    dns: document.getElementById("dns").value
+    static_ip: ipValue,
+    gateway: gateway.value,
+    dns: dns.value,
+    target_url: targetUrl.value
   };
 
   try {
     applyBtn.disabled = true;
     loadingText.style.display = "block";
+
+    await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cfg)
+    });
 
     await fetch("/api/network/apply", {
       method: "POST",
@@ -277,9 +300,9 @@ async function applySettings() {
       body: JSON.stringify(cfg)
     });
 
-    alert("Settings applied. If IP changed, reconnect using new URL.");
+    alert("Settings applied successfully.");
 
-  } catch (err) {
+  } catch {
     alert("Failed to apply settings.");
   } finally {
     applyBtn.disabled = false;
@@ -287,13 +310,11 @@ async function applySettings() {
   }
 }
 
-
 ipMode.addEventListener("change", updateVisibility);
 applyBtn.addEventListener("click", applySettings);
 
+loadConfig();
 updateVisibility();
-loadStatus();
-loadDisplayUrl();
 
 </script>
 
