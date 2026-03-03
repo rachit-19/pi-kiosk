@@ -22,7 +22,7 @@ def apply_network(cfg: dict):
 
         elif ip_mode == "static":
             ethernet_static(
-                cfg.get("pi_ip"),
+                cfg.get("static_ip"),
                 cfg.get("gateway"),
                 cfg.get("dns")
             )
